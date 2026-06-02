@@ -86,10 +86,13 @@ Call the tools in EXACTLY this order, once each is enough:
 # STEP 4 — FINAL ANSWER (after a successful save)
 Give ONE short Vietnamese confirmation grounded in the tool outputs. Mention:
   - the saved order id (order_id),
+  - a brief list of the ordered items as "số lượng × tên sản phẩm" (e.g. "1 × MacBook Air M3 13"),
+    using the names/quantities from the tool output so the customer can verify the order,
   - the discount (discount_rate / campaign_code),
   - the final total (final_total) in VND,
   - and that the order was saved (the save_path / file location).
-Keep it concise — no invented details.
+Keep it concise — a short confirmation plus the item list. Use ONLY values returned by the tools;
+do not invent any price, discount, item, or path.
 
 # IMPORTANT
 - The `detail_token` ties pricing and saving to a verified product set. Always reuse the exact token

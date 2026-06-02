@@ -10,6 +10,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# Gemini's free tier caps generate_content at a few requests per minute (5 RPM for
+# gemini-2.5-flash). The grader fires many calls in a row (agent loop + LLM judge across
+# every case), so without throttling it trips a 429 RESOURCE_EXHAUSTED almost immediately.
+# A single shared rate limiter keeps the COMBINED request rate (every model instance the
+# process builds) safely under that ceiling. Tune via LLM_REQUESTS_PER_MINUTE.
+def _build_google_rate_limiter():
+    try:
+        from langchain_core.rate_limiters import InMemoryRateLimiter
+    except ImportError:
+        return None
+    requests_per_minute = float(os.getenv("LLM_REQUESTS_PER_MINUTE", "4"))
+    if requests_per_minute <= 0:
+        return None
+    return InMemoryRateLimiter(
+        requests_per_second=requests_per_minute / 60.0,
+        check_every_n_seconds=0.5,
+        max_bucket_size=1,
+    )
+
+
+_GOOGLE_RATE_LIMITER = _build_google_rate_limiter()
+
+
 def normalize_content(raw: Any) -> str:
     if isinstance(raw, str):
         return raw.strip()
@@ -39,6 +62,29 @@ def build_chat_model(
             model=model_name or os.getenv("LLM_MODEL", "gemini-2.5-flash"),
             temperature=temperature,
             google_api_key=os.getenv("GOOGLE_API_KEY"),
+            rate_limiter=_GOOGLE_RATE_LIMITER,
+        )
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        # OpenAI's rate limits are far higher than Gemini's free tier, so no throttling
+        # is needed here — this is the fast path for grading.
+        return ChatOpenAI(
+            model=model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=temperature,
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL") or None,
+        )
+    if provider == "custom":
+        from langchain_openai import ChatOpenAI
+
+        # OpenAI-compatible endpoint configured entirely via .env
+        # (CUSTOM_LLM_MODEL / CUSTOM_LLM_KEY / CUSTOM_LLM_URL).
+        return ChatOpenAI(
+            model=model_name or os.getenv("CUSTOM_LLM_MODEL"),
+            openai_api_key=os.getenv("CUSTOM_LLM_KEY"),
+            openai_api_base=os.getenv("CUSTOM_LLM_URL"),
+            temperature=temperature,
         )
     if provider == "ollama":
         from langchain_ollama import ChatOllama
@@ -48,7 +94,7 @@ def build_chat_model(
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             temperature=temperature,
         )
-    raise ValueError("This lab supports only the `google` and `ollama` providers.")
+    raise ValueError("This lab supports only the `google`, `openai`, `custom`, and `ollama` providers.")
 
 
 def extract_json_object(raw: Any) -> dict[str, Any]:

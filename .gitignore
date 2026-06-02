@@ -8,3 +8,4 @@ __pycache__/
 # Keep the student lab package lean
 solution/
 solutions/
+.idea/
